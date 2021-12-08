@@ -4,14 +4,24 @@ import UIKit
 
 // Defining Events struct
 struct Events {
-    struct LoggedIn: BusEvent {
-        let userId: String
+    struct Input {
+        let payload: String
     }
-    struct LoggedOut: BusEvent { }
-    struct Purchased: BusEvent {
-        let tid: Int
+    
+    struct Output {
+        let payload: String
     }
 }
+
+struct TestObject1 {
+    let payload: String
+}
+
+struct TestObject2 {
+    let payload: String
+}
+
+struct PriorityObject {}
 
 // Defining Custom Notification
 extension Notification.Name {
@@ -19,59 +29,106 @@ extension Notification.Name {
 }
 
 class ViewController: UIViewController {
+    
     @IBOutlet weak var textField: UITextField!
 
-    private let disposeBag = DisposeBag()
+    private var disposeBag = DisposeBag()
 
+    let bus = RxBus()
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        if NSClassFromString("XCTest") != nil {
-            return
-        }
-        
-        let bus = RxBus.shared
-        
         // Event subscription/posting
+        bus.register(event: Events.Input.self)
+            .subscribe { event in
+                print("input, payload = \(event.element!.payload) \n")
+            }.disposed(by: disposeBag)
         
-        bus.asObservable(event: Events.LoggedIn.self).subscribe { event in
-            print("LoggedIn, userId = \(event.element!.userId)")
-        }.disposed(by: disposeBag)
-        bus.post(event: Events.LoggedIn(userId: "davin.ahn"))
+        bus.post(event: Events.Input(payload: "payload1"))
+        
+//        print("\(bus.description)")
+        
+        bus.register(event: TestObject1.self)
+            .subscribe(onNext: { event in
+                print("s1 event = \(event.payload) \n")
+            }).disposed(by: disposeBag)
+        
+        bus.register(event: TestObject1.self)
+            .subscribe(onNext: { event in
+                print("s2 event = \(event.payload) \n")
+            }).disposed(by: disposeBag)
+        
+        bus.post(event: TestObject1(payload: "test obj1 payload"))
+        
+//        print("\(bus.description)")
         
         // Sticky events
+        bus.post(event: TestObject2(payload: "test1 obj2 payload"), sticky: true)
         
-        bus.post(event: Events.LoggedOut(), sticky: true)
-        bus.asObservable(event: Events.LoggedOut.self, sticky: true).subscribe { _ in
-            print("LoggedOut")
-        }.disposed(by: disposeBag)
+        bus.register(event: TestObject2.self, sticky: true)
+            .subscribe(onNext: { event in
+                print("k1 event = \(event.payload) \n")
+            }).disposed(by: disposeBag)
+        
+        bus.register(event: TestObject2.self)
+            .subscribe(onNext: { event in
+                print("k2 event = \(event.payload) \n")
+            }).disposed(by: disposeBag)
+        
+        bus.post(event: TestObject2(payload: "test2 obj2 payload"), sticky: true)
+        
+//        print("\(bus.description)")
+        
+        bus.post(event: Events.Output(payload: "payload2"), sticky: true)
+        
+        bus.register(event: Events.Output.self, sticky: true)
+            .subscribe { event in
+                print("output, payload = \(event.element!.payload) \n")
+            }.disposed(by: disposeBag)
+        
+//        print("\(bus.description)")
         
         // Subscription priority
+        bus.register(event: PriorityObject.self, sticky: false, priority: -1)
+            .subscribe(onNext: { event in
+                print("\(event) priority -1 \n")
+            }).disposed(by: disposeBag)
         
-        bus.asObservable(event: Events.Purchased.self, sticky: false, priority: -1).subscribe { event in
-            print("Purchased(priority: -1), tid = \(event.element!.tid)")
-        }.disposed(by: disposeBag)
-        bus.asObservable(event: Events.Purchased.self, sticky: false, priority: 1).subscribe { event in
-            print("Purchased(priority: 1), tid = \(event.element!.tid)")
-        }.disposed(by: disposeBag)
-        bus.asObservable(event: Events.Purchased.self).subscribe { event in
-            print("Purchased(priority: 0 = default), tid = \(event.element!.tid)")
-        }.disposed(by: disposeBag)
-        bus.post(event: Events.Purchased(tid: 1001))
+        bus.register(event: PriorityObject.self, sticky: false, priority: 1)
+            .subscribe(onNext: { event in
+                print("\(event) priority 1 \n")
+        }).disposed(by: disposeBag)
+        
+        bus.register(event: PriorityObject.self)
+            .subscribe(onNext: { event in
+                print("\(event) priority default \n")
+        }).disposed(by: disposeBag)
+        
+        bus.post(event: PriorityObject())
+        
+//        print("\(bus.description)")
         
         // System Notification subscription
-        
-        bus.asObservable(notificationName: UIResponder.keyboardWillShowNotification).subscribe { event in
-            print("\(event.element!.name.rawValue), userInfo: \(event.element!.userInfo!)")
+        bus.register(notificationName: UIResponder.keyboardWillShowNotification).subscribe { event in
+            print("\(event.element!.name.rawValue), userInfo: \(event.element!.userInfo!) \n")
         }.disposed(by: disposeBag)
+
         textField.becomeFirstResponder()
+
+//        print("\(bus.description)")
         
         // Custom Notification subscription/posting
-        
-        bus.post(notificationName: .ViewControllerDidLoad, userInfo: ["message": "Hi~"], sticky: true)
-        bus.asObservable(notificationName: .ViewControllerDidLoad, sticky: true).subscribe { event in
-            print("\(event.element!.name.rawValue), userInfo: \(event.element!.userInfo!)")
+        bus.post(notificationName: .ViewControllerDidLoad, userInfo: ["message": "test"], sticky: true)
+
+        bus.register(notificationName: .ViewControllerDidLoad, sticky: true).subscribe { event in
+            print("\(event.element!.name.rawValue), userInfo: \(event.element!.userInfo!) \n")
         }.disposed(by: disposeBag)
         
+//        print("\(bus.description)")
+        
+        disposeBag = DisposeBag()
+        
+        print("\(bus.description)")
     }
 }

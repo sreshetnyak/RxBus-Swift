@@ -61,7 +61,6 @@ opt_in_rules:
   - unneeded_parentheses_in_closure_argument # Parentheses are not needed when declaring closure arguments.
   - unowned_variable_capture # Prefer capturing references as weak to avoid potential crashes.
   - unused_import # All imported modules should be required to make the file compile.
-  - unused_private_declaration # Private declarations should be referenced in that file.
   - vertical_parameter_alignment_on_call # Function parameters should be aligned vertically if they're in multiple lines in a method call.
 
 custom_rules:

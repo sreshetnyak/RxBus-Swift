@@ -1,17 +1,8 @@
 import Foundation
 import RxSwift
 
-public protocol BusEvent {
-    static var name: String { get }
-}
-
-public extension BusEvent {
-    static var name: String {
-        return "\(self)"
-    }
-}
-
 private class SynchronizedValues<Key: Hashable, Value: Any>: Sequence {
+    
     private let accessQueue = DispatchQueue(label: "com.ridi.rxbus.accessQueue", attributes: .concurrent)
     
     private var _values = [Key: Value]()
@@ -61,17 +52,19 @@ private class SynchronizedValues<Key: Hashable, Value: Any>: Sequence {
 }
 
 public final class RxBus: CustomStringConvertible {
-    public static let shared = RxBus()
     
-    private init() { }
+    public init() {}
     
     // MARK: -
     
     private let locker = NSLock()
     
     private var subjects = SynchronizedValues<SubscriptionKey, Any>()
+    
     private var subscriptionCounts = SynchronizedValues<SubscriptionKey, Int>()
+    
     private var stickyMap = SynchronizedValues<EventName, Any>()
+    
     private var nsObservers = SynchronizedValues<EventName, Any>()
     
     public var description: String {
@@ -112,8 +105,11 @@ public final class RxBus: CustomStringConvertible {
     // MARK: - String Util
     
     private let separator = Character("_")
+    
     private typealias EventName = String
+    
     private typealias EventPriority = Int
+    
     private typealias SubscriptionKey = String // EventName + separator + EventPriority
     
     private func makeSubscriptionKey(eventName: EventName, priority: EventPriority) -> SubscriptionKey {
@@ -139,6 +135,10 @@ public final class RxBus: CustomStringConvertible {
     
     public var count: Int {
         return subscriptionCounts.values.reduce(0, +)
+    }
+    
+    private func type_name(_ some: Any) -> String {
+        return (some is Any.Type) ? String(describing: some) : "\(type(of: some))"
     }
     
     private func increaseSubscriptionCount(forKey key: SubscriptionKey) {
@@ -175,12 +175,12 @@ public final class RxBus: CustomStringConvertible {
     
     // MARK: - BusEvent
     
-    public func asObservable<T: BusEvent>(event: T.Type, priority: Int) -> Observable<T> {
-        return asObservable(event: event, sticky: false, priority: priority)
+    public func register<T>(event: T.Type, priority: Int) -> Observable<T> {
+        return register(event: event, sticky: false, priority: priority)
     }
     
-    public func asObservable<T: BusEvent>(event: T.Type, sticky: Bool = false, priority: Int = 0) -> Observable<T> {
-        let key = makeSubscriptionKey(eventName: event.name, priority: priority)
+    public func register<T>(event: T.Type, sticky: Bool = false, priority: Int = 0) -> Observable<T> {
+        let key = makeSubscriptionKey(eventName: type_name(event), priority: priority)
         locker.lock()
         if subjects[key] == nil {
             subjects[key] = PublishSubject<T>()
@@ -199,31 +199,31 @@ public final class RxBus: CustomStringConvertible {
             }
         )
         if sticky,
-            let lastEvent = removeSticky(event: event) {
-                return Observable.of(observable, Observable.create({ subscriber -> Disposable in
-                    subscriber.onNext(lastEvent)
-                    return Disposables.create()
-                })).merge()
+           let lastEvent = removeSticky(event: event) {
+            return Observable.of(observable, Observable.create({ subscriber -> Disposable in
+                subscriber.onNext(lastEvent)
+                return Disposables.create()
+            })).merge()
         }
         return observable
     }
     
-    public func post<T: BusEvent>(event: T, sticky: Bool = false) {
-        let eventName = "\(type(of: event))"
+    public func post<T>(event: T, sticky: Bool = false) {
+        let name = type_name(event)
         if sticky {
-            stickyMap[eventName] = event
+            stickyMap[name] = event
         }
-        subjects.filter { $0.key.hasPrefix(eventName) }
-            .sorted(by: { compareKey($0.key, $1.key) })
-            .forEach { ($0.value as? PublishSubject<T>)?.onNext(event) }
+        subjects.filter { $0.key.hasPrefix(name) }
+        .sorted(by: { compareKey($0.key, $1.key) })
+        .forEach { ($0.value as? PublishSubject<T>)?.onNext(event) }
     }
     
-    public func stickyEvent<T: BusEvent>(_ event: T.Type) -> T? {
-        return stickyMap[event.name] as? T
+    public func stickyEvent<T>(_ event: T.Type) -> T? {
+        return stickyMap[type_name(event)] as? T
     }
     
-    public func removeSticky<T: BusEvent>(event: T.Type) -> T? {
-        return stickyMap.removeValue(forKey: event.name) as? T
+    public func removeSticky<T>(event: T.Type) -> T? {
+        return stickyMap.removeValue(forKey: type_name(event)) as? T
     }
     
     // MARK: - Notification
@@ -231,15 +231,15 @@ public final class RxBus: CustomStringConvertible {
     private func dispatchNotification(_ notification: Notification) {
         let eventName = notification.name.rawValue
         subjects.filter { $0.key.hasPrefix(eventName) }
-            .sorted(by: { compareKey($0.key, $1.key) })
-            .forEach { ($0.value as? PublishSubject<Notification>)?.onNext(notification) }
+        .sorted(by: { compareKey($0.key, $1.key) })
+        .forEach { ($0.value as? PublishSubject<Notification>)?.onNext(notification) }
     }
     
-    public func asObservable(notificationName name: Notification.Name, priority: Int) -> Observable<Notification> {
-        return asObservable(notificationName: name, sticky: false, priority: priority)
+    public func register(notificationName name: Notification.Name, priority: Int) -> Observable<Notification> {
+        return register(notificationName: name, sticky: false, priority: priority)
     }
     
-    public func asObservable(
+    public func register(
         notificationName name: Notification.Name,
         sticky: Bool = false,
         priority: Int = 0
@@ -269,11 +269,11 @@ public final class RxBus: CustomStringConvertible {
             }
         )
         if sticky,
-            let lastNotification = removeStickyNotification(name: name) {
-                return Observable.of(observable, Observable.create({ subscriber -> Disposable in
-                    subscriber.onNext(lastNotification)
-                    return Disposables.create()
-                })).merge()
+           let lastNotification = removeStickyNotification(name: name) {
+            return Observable.of(observable, Observable.create({ subscriber -> Disposable in
+                subscriber.onNext(lastNotification)
+                return Disposables.create()
+            })).merge()
         }
         return observable
     }
